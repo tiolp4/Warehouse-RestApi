@@ -1,8 +1,11 @@
 package ru.warehouse.api.exception;
 
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -46,6 +49,39 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorBody> handleArg(IllegalArgumentException ex) {
         return ResponseEntity.badRequest()
                 .body(new ErrorBody(ex.getMessage(), 400, Instant.now().toString()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorBody> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorBody("Access denied", 403, Instant.now().toString()));
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorBody> handleAuth(AuthenticationException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new ErrorBody(ex.getMessage(), 401, Instant.now().toString()));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorBody> handleIntegrity(DataIntegrityViolationException ex) {
+        String raw = ex.getMostSpecificCause().getMessage();
+        String friendly;
+        if (raw != null && raw.contains("invoice_number")) {
+            friendly = "Накладная с таким номером уже существует";
+        } else if (raw != null && raw.contains("tracking_number")) {
+            friendly = "Поставка с таким трек-номером уже существует";
+        } else if (raw != null && raw.contains("sku")) {
+            friendly = "Товар с таким SKU уже существует";
+        } else if (raw != null && raw.contains("username")) {
+            friendly = "Пользователь с таким логином уже существует";
+        } else if (raw != null && raw.contains("foreign key")) {
+            friendly = "Ссылка на несуществующую запись";
+        } else {
+            friendly = "Конфликт данных";
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorBody(friendly, 409, Instant.now().toString()));
     }
 
     @ExceptionHandler(Exception.class)

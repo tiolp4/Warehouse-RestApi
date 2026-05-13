@@ -29,4 +29,9 @@ public class Stock {
     public WarehouseCell getCell() { return cell; }
     public Integer getQuantity() { return quantity; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+
+    public void setProduct(Product p)          { this.product = p; }
+    public void setCell(WarehouseCell c)       { this.cell = c; }
+    public void setQuantity(Integer q)         { this.quantity = q; }
+    public void setUpdatedAt(LocalDateTime t)  { this.updatedAt = t; }
 }

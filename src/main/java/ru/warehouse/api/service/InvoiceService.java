@@ -21,12 +21,15 @@ public class InvoiceService {
     private final CellRepository cells;
     private final SupplierRepository suppliers;
     private final UserRepository users;
+    private final StockRepository stocks;
 
     public InvoiceService(InvoiceRepository invoices, InvoiceItemRepository items,
                           ProductRepository products, CellRepository cells,
-                          SupplierRepository suppliers, UserRepository users) {
+                          SupplierRepository suppliers, UserRepository users,
+                          StockRepository stocks) {
         this.invoices = invoices; this.items = items; this.products = products;
         this.cells = cells; this.suppliers = suppliers; this.users = users;
+        this.stocks = stocks;
     }
 
     public List<InvoiceDto> listAll() {
@@ -79,7 +82,48 @@ public class InvoiceService {
         Invoice inv = invoices.findById(id)
                 .orElseThrow(() -> ApiException.notFound("Invoice not found"));
         if (inv.getStatus() != Invoice.Status.DRAFT)
-            throw ApiException.badRequest("Invoice not in DRAFT state");
+            throw ApiException.badRequest("Накладная уже подтверждена или отменена");
+
+        List<InvoiceItem> lines = items.findByInvoiceId(id);
+        if (lines.isEmpty())
+            throw ApiException.badRequest("В накладной нет позиций");
+
+        // Apply stock delta per item: +qty for INCOMING, -qty for OUTGOING.
+        // Use actualQuantity if set, otherwise planned quantity.
+        int sign = inv.getType() == Invoice.Type.INCOMING ? +1 : -1;
+
+        for (InvoiceItem it : lines) {
+            int qty = it.getActualQuantity() != null ? it.getActualQuantity() : it.getQuantity();
+            if (qty <= 0) continue;
+            int delta = sign * qty;
+
+            Stock stock = stocks.findByProductAndCell(
+                    it.getProduct().getId(), it.getCell().getId()).orElse(null);
+
+            if (stock == null) {
+                if (sign < 0)
+                    throw ApiException.badRequest(
+                            "Недостаточно остатка: "
+                            + it.getProduct().getName()
+                            + " в ячейке " + it.getCell().getCode());
+                // create a fresh stock row for incoming
+                stock = new Stock();
+                stock.setProduct(it.getProduct());
+                stock.setCell(it.getCell());
+                stock.setQuantity(0);
+            }
+            int newQty = stock.getQuantity() + delta;
+            if (newQty < 0)
+                throw ApiException.badRequest(
+                        "Недостаточно остатка: "
+                        + it.getProduct().getName()
+                        + " в ячейке " + it.getCell().getCode()
+                        + " (есть " + stock.getQuantity() + ", надо " + qty + ")");
+            stock.setQuantity(newQty);
+            stock.setUpdatedAt(LocalDateTime.now());
+            stocks.save(stock);
+        }
+
         inv.setStatus(Invoice.Status.CONFIRMED);
         inv.setConfirmedAt(LocalDateTime.now());
         return toDto(inv);
