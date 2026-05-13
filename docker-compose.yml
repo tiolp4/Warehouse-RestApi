@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: warehouse
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-465678900}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d warehouse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/warehouse
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-465678900}
+      JWT_SECRET: ${JWT_SECRET:-please-change-this-secret-to-a-real-256-bit-value}
+      JWT_TTL_MIN: ${JWT_TTL_MIN:-480}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pg-data:
